@@ -20,13 +20,16 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ------------ Env vars ------------
-load_dotenv()  # local .env ke liye, Railway pe env vars se hi kaam ho jayega
+load_dotenv()  # local .env ke liye; Railway pe env vars se kaam ho jayega
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 MOONSHOT_API_KEY = os.getenv("MOONSHOT_API_KEY")
 
 MOONSHOT_BASE_URL = "https://api.moonshot.ai/v1"
-KIMI_MODEL = "kimi-k2-0711-preview"  # docs ke hisaab se model ka naam
+
+# Yahan apna sahi Kimi K2 model id daalo, jaise:
+# "kimi-k2-0711-preview" ya "kimi-k2-thinking" (docs se check karo)
+KIMI_MODEL = "kimi-k2-0711-preview"
 
 
 # ------------ Moonshot / Kimi K2 function ------------
@@ -64,15 +67,50 @@ def call_kimi_k2(user_message: str, user_id: int | None = None) -> str:
         "temperature": 0.7,
     }
 
-    resp = requests.post(url, json=payload, headers=headers, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
-
+    # HTTP request
     try:
+        resp = requests.post(url, json=payload, headers=headers, timeout=30)
+    except Exception as e:
+        logger.exception("Moonshot API request fail hua: %s", e)
+        return "Moonshot API se connect nahi ho pa raha 😅. Internet ya API service check karo."
+
+    # Agar HTTP status 200 nahi hai to error handle karo
+    if not resp.ok:
+        try:
+            err_json = resp.json()
+        except Exception:
+            err_json = None
+
+        logger.error(
+            "Moonshot API error: status=%s, body=%s",
+            resp.status_code,
+            err_json,
+        )
+
+        if resp.status_code in (401, 403):
+            return (
+                "Moonshot API key ya billing me problem lag rahi hai "
+                f"(HTTP {resp.status_code}). Dashboard me API key / billing check karo."
+            )
+
+        if resp.status_code == 429:
+            return (
+                "Moonshot API limit cross ho gayi (429). "
+                "Thodi der baad try karo ya usage/billing badhao."
+            )
+
+        return (
+            f"Moonshot API se error aa gaya (HTTP {resp.status_code}). "
+            "Key, model name ya billing check karo."
+        )
+
+    # Successful response
+    try:
+        data = resp.json()
         return data["choices"][0]["message"]["content"]
     except Exception:
-        logger.exception("Unexpected response from Moonshot: %s", data)
-        return "Backend se thoda weird response aaya 😅 thodi der baad try karna."
+        logger.exception("Unexpected response from Moonshot: %s", resp.text)
+        return "Moonshot se ajeeb response aaya 😅. Thodi der baad try karo."
 
 
 # ------------ Telegram handlers ------------
@@ -130,7 +168,6 @@ def main() -> None:
     )
 
     logger.info("Bot started on Railway (run_polling)...")
-    # yeh synchronous hai, khud hi event loop handle karta hai
     application.run_polling()
 
 
