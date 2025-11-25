@@ -20,18 +20,21 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ------------ Env vars ------------
-load_dotenv()  # local .env ke liye, Railway pe env vars se kaam ho jayega
+load_dotenv()  # local .env ke liye, Railway pe env vars se hi kaam ho jayega
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 MOONSHOT_API_KEY = os.getenv("MOONSHOT_API_KEY")
 
 MOONSHOT_BASE_URL = "https://api.moonshot.ai/v1"
-KIMI_MODEL = "kimi-k2-0711-preview"  # docs ke hisab se; chahe to kimi-k2-thinking bhi use kar sakte ho
+KIMI_MODEL = "kimi-k2-0711-preview"  # docs ke hisaab se model ka naam
 
 
 # ------------ Moonshot / Kimi K2 function ------------
 
 def call_kimi_k2(user_message: str, user_id: int | None = None) -> str:
+    """
+    User ka message Moonshot Kimi K2 ko bhejta hai aur reply return karta hai.
+    """
     if not MOONSHOT_API_KEY:
         raise RuntimeError("MOONSHOT_API_KEY env var set nahi hai.")
 
@@ -49,7 +52,7 @@ def call_kimi_k2(user_message: str, user_id: int | None = None) -> str:
                 "role": "system",
                 "content": (
                     "You are an AI assistant inside a Telegram bot. "
-                    "Reply in short, clear Hinglish (Hindi + English)."
+                    "Reply in short, clear Hinglish (Hindi + English mix)."
                 ),
             },
             {
@@ -69,7 +72,7 @@ def call_kimi_k2(user_message: str, user_id: int | None = None) -> str:
         return data["choices"][0]["message"]["content"]
     except Exception:
         logger.exception("Unexpected response from Moonshot: %s", data)
-        return "Backend se ajeeb response aaya 😅 thodi der baad try karna."
+        return "Backend se thoda weird response aaya 😅 thodi der baad try karna."
 
 
 # ------------ Telegram handlers ------------
@@ -112,9 +115,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await update.message.reply_text(reply_text)
 
 
-# ------------ Main app ------------
+# ------------ Main (no asyncio.run) ------------
 
-async def main() -> None:
+def main() -> None:
     if not TELEGRAM_BOT_TOKEN:
         raise RuntimeError("TELEGRAM_BOT_TOKEN env var set nahi hai.")
 
@@ -122,12 +125,14 @@ async def main() -> None:
 
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    application.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
+    )
 
-    logger.info("Bot started on Railway... Press Ctrl+C to stop (locally).")
-    await application.run_polling(close_loop=False)
+    logger.info("Bot started on Railway (run_polling)...")
+    # yeh synchronous hai, khud hi event loop handle karta hai
+    application.run_polling()
 
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    main()
